@@ -8,7 +8,7 @@ import { ProgressBar } from './components/ProgressBar';
 
 export function App() {
   const model = useGduModelState();
-  const { status, currentPath, nodeResp, useSIPrefix, loadError, view } = model;
+  const { status, currentPath, useSIPrefix, loadError, view } = model;
 
   if (!status) {
     return <div className="loading">Connecting…</div>;
@@ -23,7 +23,7 @@ export function App() {
     );
   }
 
-  if (currentPath === null || (status.state === 'scanning' && !nodeResp)) {
+  if (currentPath === null || status.state === 'scanning') {
     return <ProgressBar progress={status.progress} useSIPrefix={useSIPrefix} />;
   }
 

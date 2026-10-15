@@ -9,7 +9,9 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/dundee/gdu/v5/internal/common"
 	"github.com/dundee/gdu/v5/pkg/analyze"
+	"github.com/dundee/gdu/v5/pkg/fs"
 	"github.com/dundee/gdu/v5/pkg/remove"
 )
 
@@ -23,6 +25,8 @@ type statusResponse struct {
 	ShowRelativeSize bool         `json:"showRelativeSize"`
 	UseSIPrefix      bool         `json:"useSIPrefix"`
 	DeleteAllowed    bool         `json:"deleteAllowed"`
+	RescanAvailable  bool         `json:"rescanAvailable"`
+	ScanVersion      uint64       `json:"scanVersion"`
 }
 
 type progressJSON struct {
@@ -77,6 +81,8 @@ func (ui *UI) buildStatus() statusResponse {
 		ShowApparentSize: ui.ShowApparentSize,
 		ShowRelativeSize: ui.ShowRelativeSize,
 		UseSIPrefix:      ui.UseSIPrefix,
+		RescanAvailable:  len(ui.scanPaths) > 0,
+		ScanVersion:      ui.scanVersion,
 	}
 	reason, _ := ui.deleteDisabledReason(ui.noDelete, ui.scanning)
 	resp.DeleteAllowed = reason == ""
@@ -90,8 +96,50 @@ func (ui *UI) handleStatus(w http.ResponseWriter, r *http.Request) {
 	resp := ui.buildStatus()
 	if !isLocalRequest(r) {
 		resp.DeleteAllowed = false
+		resp.RescanAvailable = false
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleRescan replaces the saved filesystem scan in the background. A new
+// scan never runs alongside a transfer, cleanup, or another scan.
+func (ui *UI) handleRescan(w http.ResponseWriter, r *http.Request) {
+	if !ui.actionMu.TryLock() {
+		writeError(w, http.StatusConflict, "another action is in progress")
+		return
+	}
+	defer ui.actionMu.Unlock()
+
+	ui.mu.Lock()
+	if ui.scanning {
+		ui.mu.Unlock()
+		writeError(w, http.StatusConflict, "a scan is already in progress")
+		return
+	}
+	if len(ui.scanPaths) == 0 {
+		ui.mu.Unlock()
+		writeError(w, http.StatusConflict, "this report has no filesystem paths to rescan")
+		return
+	}
+	paths := append([]string(nil), ui.scanPaths...)
+	ui.topDir = nil
+	ui.progress = common.CurrentProgress{}
+	ui.linkedItems = make(fs.HardLinkedItems)
+	ui.scanVersion++
+	ui.scanning = true
+	ui.scanErr = nil
+	ui.mu.Unlock()
+
+	if err := ui.AnalyzePaths(paths); err != nil {
+		ui.mu.Lock()
+		ui.scanning = false
+		ui.scanErr = err
+		ui.mu.Unlock()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ui.hub.publish(ui.statusJSON())
+	writeJSON(w, http.StatusAccepted, ui.buildStatus())
 }
 
 func (ui *UI) handleNodes(w http.ResponseWriter, r *http.Request) {
@@ -281,7 +329,7 @@ func (ui *UI) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 // statusJSONForClient adjusts a broadcast status payload for one SSE
 // subscriber: the hub broadcasts a single shared message to every client, but
-// deleteAllowed must read false for remote clients since requireLocalAction
+// action flags must read false for remote clients since requireLocalAction
 // rejects their action requests regardless of what this message reports.
 func statusJSONForClient(msg string, local bool) string {
 	if local {
@@ -292,6 +340,7 @@ func statusJSONForClient(msg string, local bool) string {
 		return msg
 	}
 	resp.DeleteAllowed = false
+	resp.RescanAvailable = false
 	data, err := json.Marshal(resp)
 	if err != nil {
 		return msg

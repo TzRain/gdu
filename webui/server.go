@@ -67,6 +67,7 @@ func (ui *UI) StartUILoop() error {
 func (ui *UI) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/status", ui.handleStatus)
+	mux.HandleFunc("POST /api/v1/rescan", ui.requireLocalAction(ui.handleRescan))
 	mux.HandleFunc("GET /api/v1/nodes", ui.handleNodes)
 	mux.HandleFunc("GET /api/v1/tree", ui.handleTree)
 	mux.HandleFunc("DELETE /api/v1/nodes", ui.requireLocalAction(ui.handleDeleteNode))

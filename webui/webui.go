@@ -42,6 +42,8 @@ type UI struct {
 	actionMu     sync.Mutex
 	topDir       fs.Item
 	topDirPath   string
+	scanPaths    []string
+	scanVersion  uint64
 	linkedItems  fs.HardLinkedItems
 	collapsePath bool
 	scanning     bool
@@ -133,6 +135,9 @@ func (ui *UI) AnalyzePath(path string, parentDir fs.Item) error {
 	ui.scanning = true
 	ui.scanErr = nil
 	ui.topDirPath = path
+	if parentDir == nil {
+		ui.scanPaths = []string{path}
+	}
 	ui.mu.Unlock()
 
 	ui.Analyzer.ResetProgress()
@@ -182,6 +187,7 @@ func (ui *UI) AnalyzePaths(paths []string) error {
 	ui.scanning = true
 	ui.scanErr = nil
 	ui.topDirPath = analyze.VirtualRootName
+	ui.scanPaths = append([]string(nil), paths...)
 	ui.mu.Unlock()
 
 	go func() {
@@ -222,6 +228,7 @@ func (ui *UI) AnalyzePaths(paths []string) error {
 func (ui *UI) ReadAnalysis(input io.Reader) error {
 	ui.mu.Lock()
 	ui.scanning = true
+	ui.scanPaths = nil
 	ui.mu.Unlock()
 
 	dir, err := report.ReadAnalysis(input)
@@ -238,6 +245,7 @@ func (ui *UI) ReadAnalysis(input io.Reader) error {
 	ui.topDir = dir
 	ui.topDirPath = dir.GetPath()
 	ui.scanning = false
+	ui.scanPaths = nil
 	ui.mu.Unlock()
 	return nil
 }
@@ -258,6 +266,7 @@ func (ui *UI) ReadFromStorage(storagePath, path string) error {
 	ui.topDir = dir
 	ui.topDirPath = dir.GetPath()
 	ui.scanning = false
+	ui.scanPaths = nil
 	ui.mu.Unlock()
 	return nil
 }

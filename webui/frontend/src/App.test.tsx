@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import * as api from './api';
@@ -15,6 +15,8 @@ const status: Status = {
   showRelativeSize: false,
   useSIPrefix: false,
   deleteAllowed: true,
+  rescanAvailable: true,
+  scanVersion: 0,
 };
 const nodeResponse: NodeResponse = {
   node: {
@@ -89,6 +91,32 @@ afterEach(() => {
 });
 
 describe('chart view', () => {
+  it('rescans the server and replaces stale directory results', async () => {
+    let onStatus: ((next: Status) => void) | undefined;
+    vi.mocked(api.subscribeStatus).mockImplementation((callback) => {
+      onStatus = callback;
+      return () => undefined;
+    });
+    const rescanning = { ...status, state: 'scanning' as const, scanVersion: 1 };
+    vi.mocked(api.rescanDisk).mockResolvedValue(rescanning);
+    const updated = {
+      ...nodeResponse,
+      children: [{ ...nodeResponse.children[1], name: 'new.txt', path: `${root}/new.txt` }],
+    };
+    vi.mocked(api.fetchNode).mockResolvedValueOnce(nodeResponse).mockResolvedValue(updated);
+
+    render(<App />);
+    await screen.findByText(/file\.txt/);
+    fireEvent.click(screen.getByRole('button', { name: '重新扫描' }));
+    await waitFor(() => expect(api.rescanDisk).toHaveBeenCalledWith('test-token'));
+    await screen.findByText('Scanning…');
+    expect(screen.queryByText(/file\.txt/)).toBeNull();
+
+    act(() => onStatus?.({ ...status, scanVersion: 1 }));
+    await screen.findByText(/new\.txt/);
+    expect(screen.queryByText(/file\.txt/)).toBeNull();
+  });
+
   it('keeps the donut table and switches to a full treemap with an inverse label', async () => {
     render(<App />);
 

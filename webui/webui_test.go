@@ -1455,13 +1455,14 @@ func TestHandleEventsFlusherUnsupported(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.status)
 }
 
-func TestStatusJSONForClientHidesDeleteForRemote(t *testing.T) {
-	msg := `{"state":"done","deleteAllowed":true}`
+func TestStatusJSONForClientHidesActionsForRemote(t *testing.T) {
+	msg := `{"state":"done","deleteAllowed":true,"rescanAvailable":true}`
 
 	out := statusJSONForClient(msg, false)
 	var resp statusResponse
 	require.NoError(t, json.Unmarshal([]byte(out), &resp))
 	assert.False(t, resp.DeleteAllowed)
+	assert.False(t, resp.RescanAvailable)
 
 	assert.Equal(t, msg, statusJSONForClient(msg, true), "local clients see the message unchanged")
 	assert.Equal(t, "not json", statusJSONForClient("not json", false), "unparseable payloads pass through unchanged")

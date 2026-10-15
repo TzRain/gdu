@@ -6,8 +6,21 @@ import { BlobTargetsModal } from './BlobTargetsModal';
 
 export function Header() {
   const [showBlobTargets, setShowBlobTargets] = useState(false);
-  const { status, nodeResp, total, useSIPrefix, view, toggleView, effectiveApparent, toggleApparent, handleSelect } =
+  const [rescanPending, setRescanPending] = useState(false);
+  const { status, nodeResp, total, useSIPrefix, view, toggleView, effectiveApparent, toggleApparent, handleSelect, requestRescan, setLoadError } =
     useGduModel();
+
+  const onRescan = async () => {
+    setRescanPending(true);
+    setLoadError(null);
+    try {
+      await requestRescan();
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRescanPending(false);
+    }
+  };
 
   return (
     <header className="app-header">
@@ -17,6 +30,11 @@ export function Header() {
       </div>
       <div className="app-actions">
         <span className="total">{formatSize(total, useSIPrefix)}</span>
+        {status.rescanAvailable && (
+          <button type="button" className="toggle" onClick={() => void onRescan()} disabled={status.state === 'scanning' || rescanPending}>
+            {rescanPending ? '正在启动扫描…' : '重新扫描'}
+          </button>
+        )}
         <button type="button" className="toggle" onClick={() => setShowBlobTargets(true)}>Blob targets</button>
         <button
           type="button"

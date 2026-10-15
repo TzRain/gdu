@@ -25,6 +25,15 @@ export function fetchStatus(): Promise<Status> {
   return getJSON<Status>('api/v1/status');
 }
 
+export async function rescanDisk(token: string): Promise<Status> {
+  const res = await fetch('api/v1/rescan', {
+    method: 'POST',
+    headers: { 'X-GDU-Action': token },
+  });
+  if (!res.ok) throw await responseError(res);
+  return (await res.json()) as Status;
+}
+
 export function fetchNode(
   path: string,
   sort: SortKey,

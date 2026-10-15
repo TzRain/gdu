@@ -4,11 +4,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 import type { Node, NodeResponse, SortKey, SortOrder, Status, TreeNode } from './types';
-import { fetchNode, fetchStatus, subscribeStatus, type DeleteMode } from './api';
+import { fetchNode, fetchStatus, rescanDisk, subscribeStatus, type DeleteMode } from './api';
 import { colorMapFor, computeSlices } from './slices';
 import { useLatest } from './useLatest';
 
@@ -71,6 +72,7 @@ export interface GduModel {
   handleSelect: (node: Node) => void;
   navigateToPath: (path: string) => void;
   refreshNode: () => Promise<NodeResponse>;
+  requestRescan: () => Promise<void>;
   showHelp: boolean;
   setShowHelp: (show: boolean) => void;
   // Recursive-tree cache, keyed by path. Lives here (rather than inside
@@ -136,12 +138,30 @@ export function useGduModelState() {
   // stale once it resolves, instead of unconditionally overwriting nodeResp
   // with data for a directory the user has since navigated away from.
   const currentPathRef = useLatest(currentPath);
+  const seenScanVersion = useRef<number | null>(null);
 
   // Initial status + live updates over SSE.
   useEffect(() => {
     fetchStatus().then(setStatus).catch(() => undefined);
     return subscribeStatus(setStatus);
   }, []);
+
+  // A fresh server-side scan invalidates both the displayed node and the
+  // recursive treemap cache, including in tabs that did not request it.
+  useEffect(() => {
+    if (!status) return;
+    if (seenScanVersion.current === null) {
+      seenScanVersion.current = status.scanVersion;
+      return;
+    }
+    if (seenScanVersion.current !== status.scanVersion) {
+      seenScanVersion.current = status.scanVersion;
+      setNodeResp(null);
+      setTreePath(null);
+      setTreeRoot(null);
+      setHoveredPath(null);
+    }
+  }, [status?.scanVersion]);
 
   // Adopt the display default for size metric once, from the server flags.
   useEffect(() => {
@@ -159,7 +179,7 @@ export function useGduModelState() {
 
   // Load the current node whenever the path, sort, or scan completion changes.
   useEffect(() => {
-    if (currentPath === null) {
+    if (currentPath === null || status?.state !== 'done') {
       return;
     }
     let cancelled = false;
@@ -172,13 +192,17 @@ export function useGduModelState() {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
+          if ((err as { status?: number }).status === 404 && currentPath !== status.rootPath) {
+            setCurrentPath(status.rootPath);
+            return;
+          }
           setLoadError(err instanceof Error ? err.message : String(err));
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [currentPath, sort, order, status?.state]);
+  }, [currentPath, sort, order, status?.state, status?.scanVersion]);
 
   // Global "?" shortcut to open the help overlay; works from any view.
   useEffect(() => {
@@ -257,6 +281,11 @@ export function useGduModelState() {
     return resp;
   }, [currentPath, sort, order]);
 
+  const requestRescan = useCallback(async () => {
+    if (!actionToken) throw new Error('Actions are unavailable: reopen the gdu URL with its action token.');
+    setStatus(await rescanDisk(actionToken));
+  }, [actionToken]);
+
   const setTree = useCallback((path: string, root: TreeNode | null) => {
     setTreePath(path);
     setTreeRoot(root);
@@ -295,6 +324,7 @@ export function useGduModelState() {
     handleSelect,
     navigateToPath,
     refreshNode,
+    requestRescan,
     showHelp,
     setShowHelp,
     treeRoot,

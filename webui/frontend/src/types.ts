@@ -38,6 +38,8 @@ export interface Status {
   showRelativeSize: boolean;
   useSIPrefix: boolean;
   deleteAllowed: boolean;
+  rescanAvailable: boolean;
+  scanVersion: number;
 }
 
 export interface BlobTarget {
