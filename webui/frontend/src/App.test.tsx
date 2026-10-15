@@ -91,6 +91,20 @@ afterEach(() => {
 });
 
 describe('chart view', () => {
+  it('shows a link icon for symlinks and a file icon for other special files', async () => {
+    vi.mocked(api.fetchNode).mockResolvedValue({
+      ...nodeResponse,
+      children: [
+        { ...nodeResponse.children[1], name: 'linked-data', isSymlink: true },
+        { ...nodeResponse.children[1], name: 'socket', path: `${root}/socket`, flag: '@' },
+      ],
+    });
+
+    render(<App />);
+    expect((await screen.findByTitle('Symbolic link')).textContent).toContain('🔗');
+    expect(screen.getByText(/socket/).closest('tr')?.textContent).toContain('📄');
+  });
+
   it('rescans the server and replaces stale directory results', async () => {
     let onStatus: ((next: Status) => void) | undefined;
     vi.mocked(api.subscribeStatus).mockImplementation((callback) => {

@@ -24,6 +24,7 @@ type nodeJSON struct {
 	Name      string `json:"name"`
 	Path      string `json:"path"`
 	IsDir     bool   `json:"isDir"`
+	IsSymlink bool   `json:"isSymlink"`
 	Size      int64  `json:"size"`
 	Usage     int64  `json:"usage"`
 	ItemCount int64  `json:"itemCount"`
@@ -59,6 +60,7 @@ func toNodeJSON(it fs.Item) nodeJSON {
 		Name:      analyze.ItemDisplayName(it.GetParent(), it),
 		Path:      it.GetPath(),
 		IsDir:     it.IsDir(),
+		IsSymlink: it.GetType() == "Symlink",
 		Size:      it.GetSize(),
 		Usage:     it.GetUsage(),
 		ItemCount: fs.DisplayedItemCount(it),

@@ -93,7 +93,9 @@ export function FileTable({
               <td className="name-cell">
                 <span className="swatch" style={{ backgroundColor: color }} />
                 <span className="name">
-                  {node.isDir ? '📁' : '📄'} {node.name}
+                  <span title={node.isSymlink ? 'Symbolic link' : node.isDir ? 'Directory' : 'File'}>
+                    {node.isSymlink ? '🔗' : node.isDir ? '📁' : '📄'}
+                  </span> {node.name}
                   {node.flag === '!' && <span className="flag-error" title="Access error"> !</span>}
                 </span>
                 <span className="bar" style={{ width: `${barWidth}%`, backgroundColor: color }} />

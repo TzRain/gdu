@@ -1089,6 +1089,11 @@ func TestToNodeJSONFlag(t *testing.T) {
 	flagged := &analyze.File{Name: "denied", Flag: '!', Parent: parent}
 	assert.Equal(t, "!", toNodeJSON(flagged).Flag)
 
+	link := &analyze.File{Name: "link", Flag: '@', Symlink: "target", Parent: parent}
+	assert.True(t, toNodeJSON(link).IsSymlink)
+	other := &analyze.File{Name: "socket", Flag: '@', Parent: parent}
+	assert.False(t, toNodeJSON(other).IsSymlink)
+
 	// A blank flag (space) is omitted.
 	blank := &analyze.File{Name: "ok", Flag: ' ', Parent: parent}
 	assert.Empty(t, toNodeJSON(blank).Flag)
