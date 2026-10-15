@@ -98,9 +98,15 @@ func TestBlobCleanupCreatesSymlinkBesideNote(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(source, "file.txt"), []byte("data"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Symlink(filepath.Join(source, "file.txt"), filepath.Join(source, "alias.txt")); err != nil {
+		t.Fatal(err)
+	}
 	entries, total, err := snapshotLocal(source)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if countFiles(entries) != 1 || countSymlinks(entries) != 1 {
+		t.Fatalf("inventory: files=%d links=%d", countFiles(entries), countSymlinks(entries))
 	}
 	job, err := newBlobJob()
 	if err != nil {
@@ -131,7 +137,19 @@ func TestAzcopySkippedTransferCannotAuthorizeCleanup(t *testing.T) {
 		"TransfersSkipped": "1", "TotalBytesTransferred": "0",
 	})
 	output, _ := json.Marshal(map[string]string{"MessageType": "EndOfJob", "MessageContent": string(summary)})
-	if err := completedAzcopyJob(output, 1, 8); err == nil {
+	if err := completedAzcopyJob(output, 1, 0, 8); err == nil {
 		t.Fatal("skipped transfer was accepted")
+	}
+}
+
+func TestAzcopyPreservedSymlinkSummary(t *testing.T) {
+	summary, _ := json.Marshal(map[string]string{
+		"JobStatus": "Completed", "FileTransfers": "1", "SymlinkTransfers": "1",
+		"TransfersFailed": "0", "TransfersSkipped": "0", "SkippedSymlinkCount": "0",
+		"TotalBytesTransferred": "47",
+	})
+	output, _ := json.Marshal(map[string]string{"MessageType": "EndOfJob", "MessageContent": string(summary)})
+	if err := completedAzcopyJob(output, 1, 1, 47); err != nil {
+		t.Fatal(err)
 	}
 }

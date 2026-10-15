@@ -271,7 +271,7 @@ func resumeAzcopyJob(job *blobJob) error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("AzCopy resume failed: %w: %s", err, string(output.data))
 	}
-	return completedAzcopyJob(output.data, countFiles(job.Entries), job.Bytes)
+	return completedAzcopyJob(output.data, countFiles(job.Entries), countSymlinks(job.Entries), job.Bytes)
 }
 
 func (ui *UI) handleResumeBlobJob(w http.ResponseWriter, r *http.Request) {

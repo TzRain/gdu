@@ -198,13 +198,14 @@ func (ui *UI) handleBlobTargets(w http.ResponseWriter, r *http.Request) {
 }
 
 type localEntry struct {
-	Rel     string
-	Size    int64
-	Mode    os.FileMode
-	ModTime time.Time
-	Dir     bool
-	Dev     uint64
-	Ino     uint64
+	Rel        string
+	Size       int64
+	Mode       os.FileMode
+	ModTime    time.Time
+	Dir        bool
+	Dev        uint64
+	Ino        uint64
+	LinkTarget string
 }
 
 func snapshotLocal(path string) ([]localEntry, int64, error) {
@@ -218,16 +219,23 @@ func snapshotLocal(path string) ([]localEntry, int64, error) {
 		if err != nil {
 			return err
 		}
-		if !info.Mode().IsRegular() && !info.IsDir() {
-			return fmt.Errorf("unsupported symlink or special file: %s", p)
+		if !info.Mode().IsRegular() && !info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+			return fmt.Errorf("unsupported special file: %s", p)
+		}
+		var linkTarget string
+		if info.Mode()&os.ModeSymlink != 0 {
+			linkTarget, err = os.Readlink(p)
+			if err != nil {
+				return err
+			}
 		}
 		rel, err := filepath.Rel(path, p)
 		if err != nil {
 			return err
 		}
 		stat := info.Sys().(*syscall.Stat_t)
-		entries = append(entries, localEntry{rel, info.Size(), info.Mode(), info.ModTime(), info.IsDir(), uint64(stat.Dev), stat.Ino})
-		if info.Mode().IsRegular() {
+		entries = append(entries, localEntry{rel, info.Size(), info.Mode(), info.ModTime(), info.IsDir(), uint64(stat.Dev), stat.Ino, linkTarget})
+		if info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 			total += info.Size()
 		}
 		return nil
@@ -284,7 +292,7 @@ func (b *tailBuffer) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func completedAzcopyJob(output []byte, fileCount int, bytes int64) error {
+func completedAzcopyJob(output []byte, fileCount, symlinkCount int, bytes int64) error {
 	var end struct {
 		MessageType    string `json:"MessageType"`
 		MessageContent string `json:"MessageContent"`
@@ -304,8 +312,10 @@ func completedAzcopyJob(output []byte, fileCount int, bytes int64) error {
 	var summary struct {
 		JobStatus             string `json:"JobStatus"`
 		FileTransfers         string `json:"FileTransfers"`
+		SymlinkTransfers      string `json:"SymlinkTransfers"`
 		TransfersFailed       string `json:"TransfersFailed"`
 		TransfersSkipped      string `json:"TransfersSkipped"`
+		SkippedSymlinkCount   string `json:"SkippedSymlinkCount"`
 		TotalBytesTransferred string `json:"TotalBytesTransferred"`
 	}
 	if err := json.Unmarshal([]byte(end.MessageContent), &summary); err != nil {
@@ -315,18 +325,30 @@ func completedAzcopyJob(output []byte, fileCount int, bytes int64) error {
 	if err != nil {
 		return err
 	}
+	links, err := strconv.Atoi(summary.SymlinkTransfers)
+	if err != nil && symlinkCount != 0 {
+		return err
+	}
 	transferred, err := strconv.ParseInt(summary.TotalBytesTransferred, 10, 64)
 	if err != nil {
 		return err
 	}
-	if summary.JobStatus != "Completed" || summary.TransfersFailed != "0" || summary.TransfersSkipped != "0" || files != fileCount || transferred != bytes {
-		return fmt.Errorf("AzCopy summary did not match the local inventory (status=%s, files=%d/%d, bytes=%d/%d, failed=%s, skipped=%s)", summary.JobStatus, files, fileCount, transferred, bytes, summary.TransfersFailed, summary.TransfersSkipped)
+	if summary.JobStatus != "Completed" || summary.TransfersFailed != "0" || summary.TransfersSkipped != "0" ||
+		files != fileCount || links != symlinkCount || transferred != bytes ||
+		(symlinkCount > 0 && summary.SkippedSymlinkCount != "0") {
+		return fmt.Errorf("AzCopy summary did not match the local inventory (status=%s, files=%d/%d, links=%d/%d, bytes=%d/%d, failed=%s, skipped=%s)", summary.JobStatus, files, fileCount, links, symlinkCount, transferred, bytes, summary.TransfersFailed, summary.TransfersSkipped)
 	}
 	return nil
 }
 
-func copyToBlob(ctx context.Context, source, destination string, target blobTarget, isDir bool, fileCount int, bytes int64, job *blobJob) error {
+func copyToBlob(ctx context.Context, source, destination string, target blobTarget, isDir bool, fileCount, symlinkCount int, bytes int64, job *blobJob) error {
 	args := []string{"copy", source, destination, "--from-to=LocalBlob", "--overwrite=false", "--check-length=true", "--output-type=json"}
+	if symlinkCount > 0 {
+		// AzCopy 10.32 panics for preserved symlinks with --overwrite=false.
+		// The caller first verifies this destination has no existing blobs.
+		args[4] = "--overwrite=true"
+		args = append(args, "--preserve-symlinks=true")
+	}
 	if isDir {
 		args = append(args, "--recursive=true", "--as-subdir=false")
 	}
@@ -356,12 +378,12 @@ func copyToBlob(ctx context.Context, source, destination string, target blobTarg
 		}
 		return fmt.Errorf("AzCopy failed: %w: %s", err, strings.Join(lines, " "))
 	}
-	return completedAzcopyJob(output.data, fileCount, bytes)
+	return completedAzcopyJob(output.data, fileCount, symlinkCount, bytes)
 }
 
 func writeTransferNote(path, source, destination string, entries []localEntry, total int64) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Transferred from: %s\nAzure Blob destination: %s\nTransferred at (UTC): %s\nTotal file size: %d bytes\nFile count: %d\n\nFirst-level contents:\n", source, destination, time.Now().UTC().Format(time.RFC3339), total, countFiles(entries))
+	fmt.Fprintf(&b, "Transferred from: %s\nAzure Blob destination: %s\nTransferred at (UTC): %s\nTransferred size: %d bytes\nFile count: %d\nSymlink count: %d\n\nFirst-level contents:\n", source, destination, time.Now().UTC().Format(time.RFC3339), total, countFiles(entries), countSymlinks(entries))
 	shown := 0
 	for _, e := range entries {
 		if e.Rel == "." || strings.Contains(e.Rel, string(os.PathSeparator)) {
@@ -406,11 +428,53 @@ func writeTransferNote(path, source, destination string, entries []localEntry, t
 func countFiles(entries []localEntry) int {
 	n := 0
 	for _, e := range entries {
-		if !e.Dir {
+		if !e.Dir && e.Mode&os.ModeSymlink == 0 {
 			n++
 		}
 	}
 	return n
+}
+
+func countSymlinks(entries []localEntry) int {
+	n := 0
+	for _, e := range entries {
+		if e.Mode&os.ModeSymlink != 0 {
+			n++
+		}
+	}
+	return n
+}
+
+// Preserved symlinks require AzCopy's overwrite=true path. Refuse that path
+// unless Azure reports the destination prefix is empty before starting.
+func requireEmptyBlobDestination(ctx context.Context, target blobTarget, remotePath string, isDir bool) error {
+	azPath := os.Getenv("GDU_AZ_CLI_PATH")
+	if azPath == "" {
+		azPath = "/usr/bin/az"
+	}
+	prefix := remotePath
+	if isDir {
+		prefix += "/"
+	}
+	cmd := exec.CommandContext(ctx, azPath, "storage", "blob", "list", "--account-name", target.Account,
+		"--container-name", target.Container, "--prefix", prefix, "--num-results", "1",
+		"--auth-mode", "login", "--only-show-errors", "--query", "[].name", "-o", "json")
+	cmd.Env = os.Environ()
+	if target.AzureConfigDir != "" {
+		cmd.Env = append(cmd.Env, "AZURE_CONFIG_DIR="+target.AzureConfigDir)
+	}
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("could not verify destination is empty: %w", err)
+	}
+	var existing []string
+	if err := json.Unmarshal(output, &existing); err != nil {
+		return fmt.Errorf("invalid Azure destination check: %w", err)
+	}
+	if len(existing) != 0 {
+		return errors.New("Blob destination already contains files; local copy was retained")
+	}
+	return nil
 }
 
 func mountedBlobPath(target blobTarget, remotePath string) (string, error) {
@@ -481,6 +545,12 @@ func removeTransferred(path string, entries []localEntry, isDir bool) error {
 		stat := info.Sys().(*syscall.Stat_t)
 		if uint64(stat.Dev) != e.Dev || stat.Ino != e.Ino || info.IsDir() != e.Dir || info.Mode() != e.Mode || (!e.Dir && (info.Size() != e.Size || !info.ModTime().Equal(e.ModTime))) {
 			return fmt.Errorf("source changed during cleanup: %s", p)
+		}
+		if e.Mode&os.ModeSymlink != 0 {
+			link, err := os.Readlink(p)
+			if err != nil || link != e.LinkTarget {
+				return fmt.Errorf("symlink changed during cleanup: %s", p)
+			}
 		}
 		if err := os.Remove(p); err != nil {
 			return err
@@ -566,7 +636,11 @@ func (ui *UI) handleBlobTransfer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	if countFiles(entries) == 0 {
+	if len(entries) > 0 && entries[0].Mode&os.ModeSymlink != 0 {
+		writeError(w, http.StatusBadRequest, "select the symlink target directory instead")
+		return
+	}
+	if countFiles(entries)+countSymlinks(entries) == 0 {
 		writeError(w, http.StatusBadRequest, "empty directories have no files to transfer")
 		return
 	}
@@ -582,6 +656,12 @@ func (ui *UI) handleBlobTransfer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	destination := fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s", target.Account, target.Container, quoteBlobPath(remotePath))
+	if countSymlinks(entries) > 0 {
+		if err := requireEmptyBlobDestination(context.Background(), target, remotePath, node.IsDir()); err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+	}
 	job, err := newBlobJob()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -594,7 +674,7 @@ func (ui *UI) handleBlobTransfer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := copyToBlob(context.Background(), path, destination, target, node.IsDir(), countFiles(entries), total, &job); err != nil {
+	if err := copyToBlob(context.Background(), path, destination, target, node.IsDir(), countFiles(entries), countSymlinks(entries), total, &job); err != nil {
 		job.Stage, job.Error = "copy_failed", err.Error()
 		_ = job.save()
 		writeError(w, http.StatusBadGateway, err.Error())

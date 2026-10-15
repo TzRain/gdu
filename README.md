@@ -249,6 +249,8 @@ mode keeps the selected directory itself, removes its verified contents, and
 writes `.gdu-blob-transfer.txt` inside it. For a single file, the note is saved
 beside it. Symlink mode requires an active Blobfuse mount; it replaces the
 selected path with a link to the mounted Blob and saves the note beside it.
+Symlinks inside the selected directory are preserved as Blob symlinks, so
+links to files within that directory continue to work through Blobfuse.
 The transfer dialog asks for deletion confirmation each time.
 
 Before local cleanup, gdu requires an AzCopy `Completed` result with zero
@@ -259,6 +261,12 @@ Sources on FUSE mounts or across filesystem boundaries are rejected to avoid
 deleting mounted remote data. A destination that already contains files causes
 AzCopy to skip them; gdu retains the local copy. `--no-delete` disables the
 transfer action.
+
+AzCopy 10.32 cannot preserve symlinks with `--overwrite=false`. For a source
+containing symlinks, gdu first requires the destination prefix to be empty,
+then runs AzCopy with symlink preservation and overwrite enabled. Do not start
+another writer in that prefix during the transfer. If the preflight check or
+the upload fails, gdu retains the local source.
 
 Transfer jobs are recorded privately before upload. Open **Blob targets** to
 inspect a job and explicitly resume it after a browser disconnect or process
