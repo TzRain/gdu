@@ -1,4 +1,4 @@
-import type { NodeResponse, SortKey, SortOrder, Status, TreeNode } from './types';
+import type { BlobJob, BlobTarget, BlobTransferResult, NodeResponse, SortKey, SortOrder, Status, TreeNode } from './types';
 
 async function responseError(res: Response): Promise<Error & { status: number }> {
   let message = `request failed: ${res.status}`;
@@ -77,6 +77,42 @@ export function deleteNode(path: string, token: string, mode: DeleteMode): Promi
     params.set('mode', 'trash');
   }
   return requestAction(`api/v1/nodes?${params.toString()}`, token, { method: 'DELETE' });
+}
+
+export function fetchBlobTargets(): Promise<BlobTarget[]> {
+  return getJSON<BlobTarget[]>('api/v1/blob-targets');
+}
+
+export function fetchBlobJobs(): Promise<BlobJob[]> {
+  return getJSON<BlobJob[]>('api/v1/blob-jobs');
+}
+
+export async function resumeBlobJob(id: string, token: string): Promise<BlobJob> {
+  const res = await fetch('api/v1/blob-jobs/resume', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-GDU-Action': token },
+    body: JSON.stringify({ id, confirmDelete: true }),
+  });
+  if (!res.ok) throw await responseError(res);
+  return (await res.json()) as BlobJob;
+}
+
+export function saveBlobTargets(targets: BlobTarget[], token: string): Promise<void> {
+  return requestAction('api/v1/blob-targets', token, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(targets),
+  });
+}
+
+export async function transferToBlob(path: string, target: string, mode: 'direct' | 'symlink', prefix: string, token: string): Promise<BlobTransferResult> {
+  const res = await fetch('api/v1/blob-transfers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-GDU-Action': token },
+    body: JSON.stringify({ path, target, mode, prefix }),
+  });
+  if (!res.ok) throw await responseError(res);
+  return (await res.json()) as BlobTransferResult;
 }
 
 // subscribeStatus opens an SSE connection that yields status updates. Returns

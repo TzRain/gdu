@@ -1,8 +1,11 @@
 import { useGduModel } from '../model';
 import { formatSize } from '../format';
 import { Breadcrumbs } from './Breadcrumbs';
+import { useState } from 'react';
+import { BlobTargetsModal } from './BlobTargetsModal';
 
 export function Header() {
+  const [showBlobTargets, setShowBlobTargets] = useState(false);
   const { status, nodeResp, total, useSIPrefix, view, toggleView, effectiveApparent, toggleApparent, handleSelect } =
     useGduModel();
 
@@ -14,6 +17,7 @@ export function Header() {
       </div>
       <div className="app-actions">
         <span className="total">{formatSize(total, useSIPrefix)}</span>
+        <button type="button" className="toggle" onClick={() => setShowBlobTargets(true)}>Blob targets</button>
         <button
           type="button"
           className="toggle"
@@ -32,6 +36,7 @@ export function Header() {
         </button>
         {status.state === 'scanning' && <span className="scanning-badge">scanning…</span>}
       </div>
+      {showBlobTargets && <BlobTargetsModal onClose={() => setShowBlobTargets(false)} />}
     </header>
   );
 }

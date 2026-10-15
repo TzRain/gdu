@@ -6,6 +6,7 @@ import { TreeMap } from './TreeMap';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { useLatest } from '../useLatest';
 import { useItemActions } from '../useItemActions';
+import { BlobTransferModal } from './BlobTransferModal';
 
 // TreeMapView owns everything specific to the treemap: fetching (and
 // caching, via the model) the recursive tree, node selection, and the
@@ -145,6 +146,11 @@ export function TreeMapView() {
   return (
     <>
       <section className="chart-panel">
+        {selectedNode && status.deleteAllowed && (
+          <button type="button" className="toggle" disabled={actions.actionPending} onClick={() => actions.requestTransfer(selectedNode)}>
+            Transfer selected to Blob
+          </button>
+        )}
         {treeRoot && treePath === currentPath ? (
           <TreeMap
             root={treeRoot}
@@ -166,6 +172,7 @@ export function TreeMapView() {
       </section>
 
       <DeleteConfirmModal actions={actions} />
+      <BlobTransferModal actions={actions} />
     </>
   );
 }

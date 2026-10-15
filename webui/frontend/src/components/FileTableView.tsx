@@ -2,6 +2,7 @@ import { useGduModel } from '../model';
 import { useItemActions } from '../useItemActions';
 import { FileTable } from './FileTable';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
+import { BlobTransferModal } from './BlobTransferModal';
 
 export function FileTableView() {
   const {
@@ -36,10 +37,12 @@ export function FileTableView() {
         onSelect={handleSelect}
         onReveal={(node) => void actions.reveal(node)}
         onDelete={actions.requestDelete}
+        onTransfer={actions.requestTransfer}
         canDelete={status.deleteAllowed}
         actionPending={actions.actionPending}
       />
       <DeleteConfirmModal actions={actions} />
+      <BlobTransferModal actions={actions} />
     </section>
   );
 }

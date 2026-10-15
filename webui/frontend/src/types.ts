@@ -40,5 +40,34 @@ export interface Status {
   deleteAllowed: boolean;
 }
 
+export interface BlobTarget {
+  name: string;
+  account: string;
+  container: string;
+  defaultPrefix: string;
+  azureConfigDir: string;
+  mountPath: string;
+}
+
+export interface BlobTransferResult {
+  destination: string;
+  notePath: string;
+  bytes: number;
+  mode: 'direct' | 'symlink';
+}
+
+export interface BlobJob {
+  id: string;
+  stage: 'copying' | 'copy_failed' | 'review_required' | 'uploaded' | 'cleaning' | 'completed';
+  error?: string;
+  source: string;
+  destination: string;
+  notePath: string;
+  bytes: number;
+  mode: 'direct' | 'symlink';
+  azcopyJobId?: string;
+  updatedAt: string;
+}
+
 export type SortKey = 'size' | 'name' | 'itemCount' | 'mtime';
 export type SortOrder = 'asc' | 'desc';

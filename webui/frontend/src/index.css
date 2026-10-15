@@ -87,6 +87,40 @@ body {
   border-color: var(--accent);
 }
 
+.blob-modal {
+  width: min(680px, calc(100vw - 32px));
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+
+.blob-target-fields {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.blob-target-fields label,
+.blob-select-label {
+  display: grid;
+  gap: 4px;
+  color: var(--text-muted);
+}
+
+.blob-target-fields input,
+.blob-select-label select,
+.blob-select-label input {
+  width: 100%;
+  padding: 8px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.blob-error { color: var(--danger); }
+
 .scanning-badge {
   color: var(--text-muted);
   font-style: italic;

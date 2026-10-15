@@ -230,6 +230,44 @@ are rejected even if they can reach the port. Binding to a non-loopback address
 makes scan details reachable by other hosts on the network and prints a
 warning.
 
+### Azure Blob transfers
+
+The web UI can move a selected file or directory to Azure Blob using AzCopy.
+Configure targets with **Blob targets** in the toolbar. Each target has a storage
+account, container, default transfer folder rule, optional Azure CLI config
+directory, and optional Blobfuse mount path. Target settings and transfer job
+records are stored under the running user's private `gdu` configuration
+directory; Azure credentials remain with Azure CLI and are never saved in gdu's
+repository or target file. AzCopy must be installed separately. Set
+`GDU_AZCOPY_PATH` to the executable if it is not on `PATH`; this is also useful
+when a sandboxed AzCopy package cannot read a separate Azure CLI config.
+
+The `{path}` placeholder expands to the selected file's real absolute path
+without its first `/`. For example, the rule `archive/{path}` maps
+`/data/report` to `archive/data/report` inside the configured container. Direct
+mode keeps the selected directory itself, removes its verified contents, and
+writes `.gdu-blob-transfer.txt` inside it. For a single file, the note is saved
+beside it. Symlink mode requires an active Blobfuse mount; it replaces the
+selected path with a link to the mounted Blob and saves the note beside it.
+The transfer dialog asks for deletion confirmation each time.
+
+Before local cleanup, gdu requires an AzCopy `Completed` result with zero
+failed or skipped transfers and matching file and byte counts. It then checks
+that the local inventory has not changed. Cleanup removes only inventoried
+entries and stops if an entry has changed or new content prevents removal.
+Sources on FUSE mounts or across filesystem boundaries are rejected to avoid
+deleting mounted remote data. A destination that already contains files causes
+AzCopy to skip them; gdu retains the local copy. `--no-delete` disables the
+transfer action.
+
+Transfer jobs are recorded privately before upload. Open **Blob targets** to
+inspect a job and explicitly resume it after a browser disconnect or process
+restart. A resumed AzCopy job must pass the same completion checks; local
+cleanup can resume from an already verified upload. A job marked
+`review_required`, or one without a recorded AzCopy job ID after an interrupted
+upload, requires manual inspection of the source, Blob destination, and AzCopy
+logs. Do not delete the source until the remote copy has been verified.
+
 ## File flags
 
 Files and directories may be prefixed by a one-character

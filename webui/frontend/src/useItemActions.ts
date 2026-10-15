@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import type { Node } from './types';
-import { deleteNode, revealNode, type DeleteMode } from './api';
+import { deleteNode, revealNode, transferToBlob, type DeleteMode } from './api';
+import type { BlobTransferResult } from './types';
 import { useGduModel } from './model';
 
 // Shown instead of firing a request that is certain to come back as a bare
@@ -22,12 +23,17 @@ export interface ItemActionsOptions {
 export interface ItemActions {
   actionPending: boolean;
   deleteCandidate: Node | null;
+  transferCandidate: Node | null;
+  transferResult: BlobTransferResult | null;
   skipDeleteChoice: boolean;
   setSkipDeleteChoice: (value: boolean) => void;
   // Starts the delete workflow for a node: deletes right away when the user
   // opted out of confirmation this session, otherwise opens the modal.
   requestDelete: (node: Node) => void;
   cancelDelete: () => void;
+  requestTransfer: (node: Node) => void;
+  cancelTransfer: () => void;
+  performTransfer: (node: Node, target: string, mode: 'direct' | 'symlink', prefix: string) => Promise<void>;
   performDelete: (node: Node, mode: DeleteMode) => Promise<void>;
   reveal: (node: Node) => Promise<void>;
 }
@@ -49,6 +55,8 @@ export function useItemActions(options: ItemActionsOptions = {}): ItemActions {
   } = useGduModel();
 
   const [deleteCandidate, setDeleteCandidate] = useState<Node | null>(null);
+  const [transferCandidate, setTransferCandidate] = useState<Node | null>(null);
+  const [transferResult, setTransferResult] = useState<BlobTransferResult | null>(null);
   const [skipDeleteChoice, setSkipDeleteChoice] = useState(false);
   const [actionPending, setActionPending] = useState(false);
 
@@ -139,13 +147,47 @@ export function useItemActions(options: ItemActionsOptions = {}): ItemActions {
 
   const cancelDelete = useCallback(() => setDeleteCandidate(null), []);
 
+  const requestTransfer = useCallback((node: Node) => {
+    if (actionPending || !status.deleteAllowed) return;
+    setTransferResult(null);
+    setTransferCandidate(node);
+  }, [actionPending, status.deleteAllowed]);
+
+  const cancelTransfer = useCallback(() => {
+    if (!actionPending) setTransferCandidate(null);
+  }, [actionPending]);
+
+  const performTransfer = useCallback(async (node: Node, target: string, mode: 'direct' | 'symlink', prefix: string) => {
+    if (actionPending) return;
+    if (!actionToken) {
+      setLoadError(noActionTokenMessage);
+      return;
+    }
+    setActionPending(true);
+    try {
+      const result = await transferToBlob(node.path, target, mode, prefix, actionToken);
+      setTransferResult(result);
+      await refreshAfterMutation();
+      setLoadError(null);
+    } catch (err: unknown) {
+      setLoadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActionPending(false);
+    }
+  }, [actionPending, actionToken, refreshAfterMutation, setLoadError]);
+
   return {
     actionPending,
     deleteCandidate,
+    transferCandidate,
+    transferResult,
     skipDeleteChoice,
     setSkipDeleteChoice,
     requestDelete,
     cancelDelete,
+    requestTransfer,
+    cancelTransfer,
+    performTransfer,
     performDelete,
     reveal,
   };

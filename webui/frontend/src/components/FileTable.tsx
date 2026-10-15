@@ -17,6 +17,7 @@ interface FileTableProps {
   onSelect: (node: Node) => void;
   onReveal: (node: Node) => void;
   onDelete: (node: Node) => void;
+  onTransfer: (node: Node) => void;
   // Delete is hidden entirely (not just disabled) when the server does not
   // allow it; reveal stays available.
   canDelete: boolean;
@@ -45,6 +46,7 @@ export function FileTable({
   onSelect,
   onReveal,
   onDelete,
+  onTransfer,
   canDelete,
   actionPending,
 }: FileTableProps) {
@@ -111,7 +113,16 @@ export function FileTable({
                   📂
                 </button>
                 {canDelete && (
-                  <button
+                  <><button
+                    type="button"
+                    className="row-action"
+                    aria-label={`Transfer ${node.name} to Blob`}
+                    title="Transfer to Azure Blob"
+                    disabled={actionPending}
+                    onClick={() => onTransfer(node)}
+                  >
+                    ☁
+                  </button><button
                     type="button"
                     className="row-action"
                     aria-label={`Delete ${node.name}`}
@@ -120,7 +131,7 @@ export function FileTable({
                     onClick={() => onDelete(node)}
                   >
                     🗑
-                  </button>
+                  </button></>
                 )}
               </td>
             </tr>
